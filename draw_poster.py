@@ -1,205 +1,260 @@
-# Build-time poster generator for the news-image-20261120 entry.
-# NOT run by the grader: the entry program (main.py) only copies the
-# finished entry.png. Run locally with:  python3 draw_poster.py
-# Requires Pillow + DejaVu fonts (present on this machine).
-# Every story below was verified against at least two news sources
-# reporting on 20 November 2026; wording states only what was reported,
-# with no verdict, outcome or figure claimed beyond the sources.
-import math
+"""Draw the news-image-20261120 poster: one 1024x1024 PNG.
+
+Editorial broadsheet for Friday 20 November 2026: a navy masthead with
+the date, six story panels (2 x 3) each with a flat vector icon, a
+headline and one factual line, and a footer strip with three more items.
+
+Build-time only: Pillow + DejaVu fonts. Deterministic -- no randomness,
+no clock, no network. Run:  python3 draw_poster.py  ->  entry.png
+"""
+
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-PAPER = (245, 240, 230)
-NAVY = (13, 27, 51)
-GOLD = (232, 185, 60)
-INK = (24, 28, 36)
-MUTED = (96, 100, 110)
-PANEL = (255, 255, 255)
-BORDER = (216, 209, 194)
+HERE = Path(__file__).resolve().parent
+OUT = HERE / "entry.png"
 
-SERIF_B = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+W = H = 1024
+
+PAPER = (246, 241, 231)      # warm newsprint
+INK = (26, 26, 26)           # near-black text
+NAVY = (22, 35, 63)          # masthead / footer band
+GOLD = (217, 164, 65)        # date line, rules
+CARD = (255, 255, 255)
+CARD_LINE = (216, 210, 194)
+GREY = (74, 74, 74)          # factual line
+WHITE = (255, 255, 255)
+
+FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def font(name, size):
+    """Load a DejaVu font, falling back to Pillow's default."""
+    path = FONT_DIR / name
+    if path.exists():
+        return ImageFont.truetype(str(path), size)
+    return ImageFont.load_default(size=size)
 
 
-def wrap(draw, text, fnt, max_w):
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=fnt) <= max_w:
+SERIF_BOLD = font("DejaVuSerif-Bold.ttf", 62)
+SANS_BOLD = font("DejaVuSans-Bold.ttf", 27)
+SANS = font("DejaVuSans.ttf", 19)
+KICKER_FONT = font("DejaVuSans-Bold.ttf", 17)
+DATE_FONT = font("DejaVuSans-Bold.ttf", 30)
+FOOT_FONT = font("DejaVuSans.ttf", 19)
+FOOT_BOLD = font("DejaVuSans-Bold.ttf", 19)
+
+
+def wrap(draw, text, fnt, max_width):
+    """Greedy word wrap using real glyph widths."""
+    words = text.split()
+    lines, cur = [], ""
+    for word in words:
+        trial = f"{cur} {word}".strip()
+        if draw.textlength(trial, font=fnt) <= max_width:
             cur = trial
         else:
             if cur:
                 lines.append(cur)
-            cur = w
+            cur = word
     if cur:
         lines.append(cur)
     return lines
 
 
-def text_block(draw, x, y, text, fnt, fill, max_w, leading):
-    for ln in wrap(draw, text, fnt, max_w):
-        draw.text((x, y), ln, font=fnt, fill=fill)
-        y += leading
-    return y
+def centre(draw, y, text, fnt, fill, width=W):
+    draw.text((width / 2, y), text, font=fnt, fill=fill, anchor="ma")
 
 
-# --- icons: flat pictograms drawn with PIL primitives only -----------
-def icon_summit(d, x, y):
-    # three leaders at one table: head + shoulders, red / blue / gold
-    for cx, col in ((22, (178, 35, 24)), (42, (36, 86, 166)), (62, (180, 140, 20))):
-        d.pieslice([x + cx - 17, y + 30, x + cx + 17, y + 66], 180, 360, fill=col)
-        d.ellipse([x + cx - 11, y + 10, x + cx + 11, y + 32], fill=col)
-    d.rectangle([x + 6, y + 66, x + 78, y + 72], fill=(120, 110, 96))
+# ---------------------------------------------------------------- icons
+# Each draws a flat pictogram inside a square of side `s` centred at
+# (cx, cy), in the story colour. All coordinates are computed from the
+# centre, so icons stay put if the panel geometry changes.
+
+def icon_leaders(d, cx, cy, s, color):
+    r = s * 0.17
+    gap = s * 0.30
+    for i, dx in enumerate((-gap, 0, gap)):
+        fill = (color, (31, 97, 141), (183, 119, 14))[i]
+        d.ellipse([cx + dx - r, cy - r, cx + dx + r, cy + r], fill=fill)
+        d.ellipse([cx + dx - r * 0.45, cy - r * 0.75,
+                   cx + dx + r * 0.45, cy + r * 0.05], fill=WHITE)
+    d.line([cx - s * 0.42, cy + s * 0.34, cx + s * 0.42, cy + s * 0.34],
+           fill=color, width=5)
 
 
-def icon_scales(d, x, y):
-    teal = (15, 118, 110)
-    d.line([x + 42, y + 12, x + 42, y + 72], fill=teal, width=4)
-    d.line([x + 10, y + 20, x + 74, y + 20], fill=teal, width=4)
-    d.line([x + 30, y + 72, x + 54, y + 72], fill=teal, width=4)
-    for bx in (12, 72):
-        d.line([x + bx, y + 20, x + bx - 9, y + 46], fill=teal, width=3)
-        d.line([x + bx, y + 20, x + bx + 9, y + 46], fill=teal, width=3)
-        d.pieslice([x + bx - 12, y + 44, x + bx + 12, y + 62], 0, 180, fill=teal)
-    d.ellipse([x + 38, y + 8, x + 46, y + 16], fill=teal)
+def icon_scales(d, cx, cy, s, color):
+    top = cy - s * 0.34
+    d.line([cx, top, cx, cy + s * 0.30], fill=color, width=5)
+    d.ellipse([cx - 6, top - 12, cx + 6, top], fill=color)
+    d.line([cx - s * 0.36, top + 4, cx + s * 0.36, top + 4],
+           fill=color, width=5)
+    for sign in (-1, 1):
+        px = cx + sign * s * 0.36
+        d.line([px, top + 4, px, top + s * 0.22], fill=color, width=3)
+        d.polygon([(px - s * 0.16, top + s * 0.22),
+                   (px + s * 0.16, top + s * 0.22),
+                   (px, top + s * 0.34)], fill=color)
+    d.line([cx - s * 0.22, cy + s * 0.34, cx + s * 0.22, cy + s * 0.34],
+           fill=color, width=5)
 
 
-def icon_tower(d, x, y):
-    # skyscraper with a cracked, damaged band of windows
-    steel = (31, 58, 95)
-    d.rectangle([x + 24, y + 6, x + 60, y + 76], fill=steel)
-    d.polygon([(x + 24, y + 6), (x + 42, y - 2), (x + 60, y + 6)], fill=(21, 42, 70))
-    for wy in (16, 28, 40):
-        for wx in (30, 40, 50):
-            d.rectangle([x + wx, y + wy, x + wx + 6, y + wy + 6],
-                        fill=(232, 185, 60))
-    # damage: dark broken band with a red crack
-    d.rectangle([x + 24, y + 50, x + 60, y + 62], fill=(24, 28, 36))
-    d.line([x + 34, y + 50, x + 40, y + 56, x + 34, y + 62],
-           fill=(178, 35, 24), width=3)
-    d.line([x + 50, y + 50, x + 46, y + 56, x + 52, y + 62],
-           fill=(178, 35, 24), width=3)
-    d.rectangle([x + 10, y + 70, x + 74, y + 76], fill=(120, 110, 96))
+def icon_tower(d, cx, cy, s, color):
+    x0, x1 = cx - s * 0.13, cx + s * 0.13
+    y0, y1 = cy - s * 0.34, cy + s * 0.34
+    d.rectangle([x0, y0, x1, y1], fill=color)
+    for row in range(5):
+        for col in range(2):
+            wx = x0 + 7 + col * 12
+            wy = y0 + 8 + row * 11
+            d.rectangle([wx, wy, wx + 6, wy + 6], fill=WHITE)
+    burst = (217, 58, 32)
+    bx, by = x1 + s * 0.10, y0 + s * 0.02
+    for dx, dy in ((0, -1), (1, -1), (1, 0), (1, 1), (0, 1)):
+        d.line([bx, by, bx + dx * 16, by + dy * 16], fill=burst, width=4)
 
 
-def icon_cyclone(d, x, y):
-    blue = (46, 94, 140)
+def icon_cyclone(d, cx, cy, s, color):
+    import math
     pts = []
-    for deg in range(0, 540, 6):
-        r = 4 + deg / 540.0 * 34
-        a = math.radians(deg)
-        pts.append((x + 42 + r * math.cos(a), y + 42 + r * math.sin(a)))
-    d.line(pts, fill=blue, width=5)
-    d.ellipse([x + 37, y + 37, x + 47, y + 47], fill=blue)
+    turns = 2.6
+    steps = 90
+    for i in range(steps + 1):
+        t = i / steps * turns * 2 * math.pi
+        r = s * 0.36 * i / steps
+        pts.append((cx + r * math.cos(t), cy + r * math.sin(t)))
+    d.line(pts, fill=color, width=5, joint="curve")
+    d.ellipse([cx - 6, cy - 6, cx + 6, cy + 6], fill=color)
 
 
-def icon_hourglass(d, x, y):
-    amber = (194, 120, 20)
-    d.polygon([(x + 14, y + 8), (x + 70, y + 8), (x + 42, y + 40)], fill=amber)
-    d.polygon([(x + 14, y + 76), (x + 70, y + 76), (x + 42, y + 44)], fill=amber)
-    d.line([x + 10, y + 8, x + 74, y + 8], fill=(24, 28, 36), width=4)
-    d.line([x + 10, y + 76, x + 74, y + 76], fill=(24, 28, 36), width=4)
-    d.polygon([(x + 36, y + 58), (x + 48, y + 58), (x + 42, y + 72)],
-              fill=(232, 185, 60))
+def icon_hourglass(d, cx, cy, s, color):
+    hw, hh = s * 0.30, s * 0.30
+    d.polygon([(cx - hw, cy - hh), (cx + hw, cy - hh), (cx, cy)],
+              outline=color, width=4)
+    d.polygon([(cx - hw, cy + hh), (cx + hw, cy + hh), (cx, cy)],
+              outline=color, width=4)
+    d.line([cx, cy - 4, cx, cy + hh - 6], fill=color, width=4)
+    for dx, dy in ((-8, 12), (7, 16), (0, 20)):
+        d.ellipse([cx + dx - 2, cy + dy - 2, cx + dx + 2, cy + dy + 2],
+                  fill=color)
 
 
-def icon_skyline(d, x, y):
-    pink = (214, 51, 108)
-    d.ellipse([x + 42, y + 4, x + 74, y + 36], fill=pink)
-    d.rectangle([x + 8, y + 48, x + 24, y + 76], fill=(31, 41, 55))
-    d.rectangle([x + 28, y + 34, x + 44, y + 76], fill=(31, 41, 55))
-    d.rectangle([x + 48, y + 52, x + 62, y + 76], fill=(31, 41, 55))
-    d.rectangle([x + 66, y + 42, x + 76, y + 76], fill=(31, 41, 55))
-    for wx, wy in ((12, 54), (32, 40), (52, 58), (70, 48)):
-        d.rectangle([x + wx, y + wy, x + wx + 4, y + wy + 4], fill=GOLD)
+def icon_skyline(d, cx, cy, s, color):
+    base = cy + s * 0.32
+    heights = (0.42, 0.62, 0.34, 0.55, 0.44)
+    bw = s * 0.15
+    x = cx - s * 0.40
+    for h in heights:
+        top = base - s * h
+        d.rectangle([x, top, x + bw, base], fill=color)
+        for wy in range(int(top) + 6, int(base) - 6, 12):
+            d.rectangle([x + 4, wy, x + 8, wy + 5], fill=WHITE)
+        x += bw + 4
+    sx, sy = cx + s * 0.28, cy - s * 0.30
+    d.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], fill=(217, 164, 65))
 
 
+ICONS = {
+    "leaders": icon_leaders,
+    "scales": icon_scales,
+    "tower": icon_tower,
+    "cyclone": icon_cyclone,
+    "hourglass": icon_hourglass,
+    "skyline": icon_skyline,
+}
+
+# --------------------------------------------------------------- stories
+# (kicker, headline, one factual line, icon, accent colour)
 STORIES = [
-    dict(tag="TOP STORY  —  DIPLOMACY", color=(178, 35, 24), tint=(250, 232, 228),
-         icon=icon_summit,
-         head="Trump, Xi and Putin end historic summit",
-         sub="Joint \u201cpeace declaration\u201d: a nuclear war must never be fought.",
-         place="SHENZHEN, CHINA"),
-    dict(tag="JUSTICE", color=(15, 118, 110), tint=(226, 242, 240),
-         icon=icon_scales,
-         head="World court: Myanmar committed genocide",
-         sub="First state ever held responsible; reparations ordered.",
-         place="THE HAGUE, NETHERLANDS"),
-    dict(tag="MIDDLE EAST", color=(31, 58, 95), tint=(232, 238, 246),
-         icon=icon_tower,
-         head="Houthi strike hits Riyadh\u2019s tallest tower",
-         sub="PIF Tower damaged across seven floors; no injuries.",
-         place="RIYADH, SAUDI ARABIA"),
-    dict(tag="DISASTER", color=(46, 94, 140), tint=(232, 240, 248),
-         icon=icon_cyclone,
-         head="Cyclone Akvan hits Odisha",
-         sub="300,000 evacuated as the storm makes landfall.",
-         place="ODISHA, INDIA"),
-    dict(tag="US POLITICS", color=(194, 120, 20), tint=(253, 242, 226),
-         icon=icon_hourglass,
-         head="Trump: no rush on Iran decision",
-         sub="No war decision before 2027, Trump says.",
-         place="WASHINGTON, USA"),
-    dict(tag="CULTURE", color=(214, 51, 108), tint=(252, 231, 243),
-         icon=icon_skyline,
-         head="GTA VI: $1.84bn by launch day",
-         sub="Passes The Odyssey\u2019s whole box-office run.",
-         place="GLOBAL LAUNCH"),
+    ("SUMMIT IN SHENZHEN",
+     "TRUMP, XI AND PUTIN END HISTORIC SUMMIT",
+     "Joint peace declaration: nuclear war must never be fought.",
+     "leaders", (176, 58, 46)),
+    ("THE HAGUE",
+     "WORLD COURT: MYANMAR COMMITTED GENOCIDE",
+     "First state ever held responsible; reparations ordered.",
+     "scales", (31, 97, 141)),
+    ("RIYADH",
+     "HOUTHI STRIKE HITS RIYADH'S TALLEST TOWER",
+     "PIF Tower damaged across seven floors, no injuries.",
+     "tower", (125, 60, 152)),
+    ("ODISHA, INDIA",
+     "CYCLONE AKVAN HITS ODISHA",
+     "300,000 evacuated as the storm makes landfall.",
+     "cyclone", (20, 143, 119)),
+    ("WASHINGTON",
+     "TRUMP: NO RUSH ON IRAN DECISION",
+     "\u2018See what happens after January 1,\u2019 he says.",
+     "hourglass", (183, 119, 14)),
+    ("GAMING",
+     "GTA VI: $1.84BN BY LAUNCH DAY",
+     "Passes The Odyssey's whole box-office run.",
+     "skyline", (46, 134, 193)),
 ]
+
+FOOTER = [
+    "Voyager 1 passes one light-day from Earth",
+    "COP31 draft drops fossil fuels",
+    "South Korea exports top $1 trillion",
+]
+
+
+def draw_panel(d, x, y, w, h, story):
+    kicker, headline, fact, icon_name, color = story
+    d.rectangle([x, y, x + w, y + h], fill=CARD, outline=CARD_LINE, width=2)
+    d.rectangle([x, y, x + w, y + 8], fill=color)
+
+    pad = 18
+    icon_box = 84
+    ix = x + pad + icon_box // 2
+    iy = y + 8 + pad + icon_box // 2
+    ICONS[icon_name](d, ix, iy, icon_box, color)
+
+    tx = x + pad + icon_box + 14
+    d.text((tx, y + 8 + pad + 30), kicker, font=KICKER_FONT, fill=color)
+
+    hy = y + 8 + pad + icon_box + 6
+    lines = wrap(d, headline, SANS_BOLD, w - 2 * pad)
+    for line in lines[:2]:
+        d.text((x + pad, hy), line, font=SANS_BOLD, fill=INK)
+        hy += 32
+    fy = hy + 4
+    for line in wrap(d, fact, SANS, w - 2 * pad)[:2]:
+        d.text((x + pad, fy), line, font=SANS, fill=GREY)
+        fy += 24
 
 
 def main():
     img = Image.new("RGB", (W, H), PAPER)
     d = ImageDraw.Draw(img)
 
-    # --- masthead ---
-    d.rectangle([0, 0, W, 158], fill=NAVY)
-    d.text((W // 2, 16), "THE WORLD IN ONE DAY", font=font(SERIF_B, 54),
-           fill=(255, 255, 255), anchor="ma")
-    d.line([212, 92, W - 212, 92], fill=GOLD, width=3)
-    d.text((W // 2, 102), "FRIDAY  \u2022  20 NOVEMBER 2026",
-           font=font(SANS_B, 36), fill=GOLD, anchor="ma")
+    # Masthead: navy band, serif title, gold date.
+    d.rectangle([0, 0, W, 168], fill=NAVY)
+    centre(d, 26, "THE WORLD IN ONE DAY", SERIF_BOLD, WHITE)
+    centre(d, 106, "FRIDAY  \u2022  20 NOVEMBER 2026", DATE_FONT, GOLD)
+    d.rectangle([0, 168, W, 172], fill=GOLD)
 
-    # --- strapline ---
-    d.text((W // 2, 168), "Six stories that defined the day",
-           font=font(SANS, 19), fill=MUTED, anchor="ma")
+    # Six panels, 2 columns x 3 rows.
+    margin, gutter = 28, 20
+    top, bottom = 188, 936
+    pw = (W - 2 * margin - gutter) // 2
+    ph = (bottom - top - 2 * gutter) // 3
+    for i, story in enumerate(STORIES):
+        col, row = i % 2, i // 2
+        x = margin + col * (pw + gutter)
+        y = top + row * (ph + gutter)
+        draw_panel(d, x, y, pw, ph, story)
 
-    # --- story panels: 2 columns x 3 rows ---
-    mx, gap, cw, ch = 24, 16, 480, 242
-    ys = [196, 450, 704]
-    for i, s in enumerate(STORIES):
-        x0 = mx + (i % 2) * (cw + gap)
-        y0 = ys[i // 2]
-        d.rectangle([x0, y0, x0 + cw, y0 + ch], fill=PANEL, outline=BORDER, width=1)
-        d.rectangle([x0, y0, x0 + cw, y0 + 7], fill=s["color"])
-        d.text((x0 + 18, y0 + 20), s["tag"], font=font(SANS_B, 15), fill=s["color"])
-        # icon box
-        d.rounded_rectangle([x0 + 18, y0 + 52, x0 + 102, y0 + 136],
-                            radius=10, fill=s["tint"])
-        s["icon"](d, x0 + 18, y0 + 52)
-        # headline beside the icon
-        text_block(d, x0 + 118, y0 + 52, s["head"], font(SANS_B, 27),
-                   INK, 344, 32)
-        # one-line factual sub, full width
-        text_block(d, x0 + 18, y0 + 152, s["sub"], font(SANS, 19),
-                   (52, 58, 68), 444, 25)
-        # place line
-        d.text((x0 + 18, y0 + 212), s["place"], font=font(SANS_B, 14), fill=MUTED)
+    # Footer strip: three more items from the day.
+    d.rectangle([0, 952, W, H], fill=NAVY)
+    line1 = "ALSO TODAY  \u2014  " + FOOTER[0] + "  \u2022  " + FOOTER[1]
+    line2 = FOOTER[2] + " for the first time"
+    centre(d, 962, line1, FOOT_FONT, WHITE)
+    d.text((W / 2, 990), line2, font=FOOT_BOLD, fill=GOLD, anchor="ma")
 
-    # --- footer: also-today strip ---
-    d.line([24, 950, W - 24, 950], fill=NAVY, width=2)
-    d.text((24, 960), "ALSO TODAY:  Voyager 1 passes one light-day from Earth",
-           font=font(SANS_B, 17), fill=NAVY)
-    d.text((24, 988), "COP31 draft drops fossil fuels  \u2022  South Korea\u2019s exports top $1 trillion",
-           font=font(SANS, 16), fill=MUTED)
-
-    img.save("entry.png", optimize=True)
+    img.save(OUT, format="PNG")
+    print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
