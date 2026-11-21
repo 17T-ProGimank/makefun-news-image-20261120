@@ -1,21 +1,24 @@
-# news-image-20261120 entry (Python 3.13, standard library only).
-# The finished poster is entry.png beside this file; the program
-# copies it to /output/entry.png. No network, no randomness:
-# every run writes the same bytes.
-#
-# Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in
-# for /output:
-#   mkdir -p out && MAKEFUN_OUTPUT_DIR=out python3 main.py
+"""Entrypoint for news-image-20261120 v3.
+
+Runs draw_poster.py and writes entry.png to $MAKEFUN_OUTPUT_DIR
+(default /output). Deterministic: two runs produce byte-identical output.
+Standard library only.
+"""
 
 import os
-import shutil
-from pathlib import Path
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import draw_poster
 
 
 def main():
-    out_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(Path(__file__).with_name("entry.png"), out_dir / "entry.png")
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "entry.png")
+    size = draw_poster.render(out_path)
+    print(f"wrote {out_path} ({size} bytes)")
 
 
 if __name__ == "__main__":
